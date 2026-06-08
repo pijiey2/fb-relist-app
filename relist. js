@@ -1,0 +1,218 @@
+(function() {
+  'use strict';
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const STORAGE_KEY = 'fb_relist_data';
+
+  window._fbRelistTrigger = scrape;
+
+  async function waitFor(selector, timeout = 30000) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const el = document.querySelector(selector);
+      if (el) return el;
+      await sleep(500);
+    }
+    return null;
+  }
+
+  async function waitForButton(text, timeout = 10000) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const btns = [...document.querySelectorAll('button, [role="button"]')];
+      const found = btns.find(b => b.textContent.toLowerCase().includes(text.toLowerCase()));
+      if (found) return found;
+      await sleep(500);
+    }
+    return null;
+  }
+
+  // Auto-run autofill kalau kat create page
+  const path = window.location.pathname;
+  if (path.includes('/marketplace/create') || path.includes('/marketplace/selling')) {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try { autoFill(JSON.parse(raw)); }
+      catch(e) { console.error('[FBRelist]', e); }
+    }
+  }
+
+  function scrapeTitle() {
+    const selectors = ['h1', '[data-testid="marketplace_pdp_title"]'];
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (el && el.textContent.trim().length > 2) return el.textContent.trim();
+    }
+    return '';
+  }
+
+  function scrapeDescription() {
+    const selectors = [
+      '[data-testid="marketplace_pdp_description"]',
+      'div[style*="white-space: pre-wrap"]',
+    ];
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (el && el.textContent.trim().length > 5) return el.textContent.trim();
+    }
+    return '';
+  }
+
+  function scrapePrice() {
+    const els = [...document.querySelectorAll('span')];
+    const priceEl = els.find(e => e.textContent.match(/RM\s?[\d,]+/));
+    if (priceEl) {
+      const match = priceEl.textContent.match(/[\d,]+/);
+      return match ? match[0].replace(',', '') : '';
+    }
+    return '';
+  }
+
+  async function scrape() {
+    const banner = makeBanner('🔍 Scraping listing...');
+
+    try {
+      window.scrollTo(0, document.body.scrollHeight);
+      await sleep(2000);
+      window.scrollTo(0, 0);
+      await sleep(500);
+
+      // Scrape gambar
+      const allImgs = [...document.querySelectorAll('img')];
+      const images = [...new Set(
+        allImgs.map(img => img.src).filter(src =>
+          src && src.includes('fbcdn.net') &&
+          !src.includes('emoji') && !src.includes('icon') &&
+          !src.includes('profile') && !src.includes('_s.') &&
+          (src.includes('/v/') || src.includes('&_nc_cat=') ||
+           src.includes('p535x535') || src.includes('p720x720') ||
+           src.includes('p960x960') || src.includes('p1080x1080'))
+        )
+      )].slice(0, 10);
+
+      if (images.length === 0) {
+        throw new Error('Tak jumpa gambar. Tap gambar dulu then cuba lagi.');
+      }
+
+      const title = scrapeTitle();
+      const description = scrapeDescription();
+      const price = scrapePrice();
+
+      // Download gambar
+      banner.textContent = '📥 Download ' + images.length + ' gambar...';
+      for (let i = 0; i < images.length; i++) {
+        banner.textContent = '📥 Download gambar ' + (i+1) + '/' + images.length;
+        await downloadImage(images[i], i);
+        await sleep(800);
+      }
+
+      // Simpan data
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ title, description, price, imageCount: images.length }));
+
+      banner.style.background = '#14532d';
+      banner.innerHTML = '✅ ' + images.length + ' gambar downloaded!<br><span style="color:#86efac;font-size:11px">Bukak form dalam 3 saat...</span>';
+
+      await sleep(3000);
+      banner.remove();
+
+      window.location.href = 'https://www.facebook.com/marketplace/create/item';
+
+    } catch(e) {
+      banner.style.background = '#7f1d1d';
+      banner.textContent = '❌ ' + e.message;
+    }
+  }
+
+  async function downloadImage(url, index) {
+    return new Promise((resolve) => {
+      fetch(url)
+        .then(r => r.blob())
+        .then(blob => {
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = 'fb_relist_' + (index + 1) + '.jpg';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => { URL.revokeObjectURL(blobUrl); resolve(true); }, 500);
+        })
+        .catch(() => resolve(false));
+    });
+  }
+
+  async function autoFill(data) {
+    const banner = makeBanner('⏳ Tunggu form load...');
+    await sleep(3000);
+
+    if (data.title) {
+      const titleInput = await waitFor('input[name="title"], input[aria-label*="title"], input[aria-label*="Title"]', 10000);
+      if (titleInput) {
+        banner.textContent = '✏️ Isi title...';
+        await fillInput(titleInput, data.title);
+        await sleep(500);
+      }
+    }
+
+    if (data.price) {
+      const priceInput = await waitFor('input[name="price"], input[aria-label*="price"], input[aria-label*="Price"]', 5000);
+      if (priceInput) {
+        banner.textContent = '💰 Isi price...';
+        await fillInput(priceInput, data.price);
+        await sleep(500);
+      }
+    }
+
+    if (data.description) {
+      const descInput = await waitFor('textarea, div[contenteditable="true"]', 5000);
+      if (descInput) {
+        banner.textContent = '📝 Isi description...';
+        await fillInput(descInput, data.description);
+        await sleep(500);
+      }
+    }
+
+    localStorage.removeItem(STORAGE_KEY);
+
+    banner.style.background = '#14532d';
+    banner.innerHTML = '✅ Done! Title & description dah isi.<br><span style="color:#86efac;font-size:11px">Upload gambar dari gallery → Publish!</span>';
+    setTimeout(() => banner.remove(), 8000);
+  }
+
+  async function fillInput(el, value) {
+    el.focus();
+    await sleep(200);
+
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')
+      || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
+
+    if (nativeSetter && nativeSetter.set && el.tagName !== 'DIV') {
+      nativeSetter.set.call(el, value);
+    } else {
+      el.textContent = value;
+    }
+
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+    await sleep(300);
+  }
+
+  function makeBanner(text) {
+    const existing = document.getElementById('fb-relist-banner');
+    if (existing) existing.remove();
+    const b = document.createElement('div');
+    b.id = 'fb-relist-banner';
+    b.style.cssText = `
+      position:fixed; top:16px; right:16px; z-index:99999;
+      background:#18181b; color:#fff; padding:14px 18px;
+      border-radius:10px; font-size:13px; font-family:monospace;
+      box-shadow:0 4px 20px rgba(0,0,0,0.5); max-width:300px; line-height:1.6;
+    `;
+    b.textContent = text;
+    document.body.appendChild(b);
+    return b;
+  }
+
+})();
