@@ -1,3 +1,4 @@
+```java
 package com.fbrelist.app;
 
 import android.annotation.SuppressLint;
@@ -79,6 +80,9 @@ public class MainActivity extends Activity {
         relistBtn.setBackgroundColor(0xFF1877F2);
         relistBtn.setTextColor(0xFFFFFFFF);
         relistBtn.setTextSize(14f);
+        relistBtn.setElevation(20f);
+        relistBtn.setClickable(true);
+        relistBtn.setFocusable(true);
 
         FrameLayout.LayoutParams btnParams = new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -95,6 +99,7 @@ public class MainActivity extends Activity {
         });
 
         root.addView(relistBtn);
+        relistBtn.bringToFront();
         setContentView(root);
 
         webView.loadUrl("https://www.facebook.com/marketplace/");
@@ -144,3 +149,6 @@ public class MainActivity extends Activity {
         }
     }
 }
+```
+
+Paste replace semua dalam `MainActivity.java`, commit, tunggu build, install APK baru. Bagitau! 🙂
