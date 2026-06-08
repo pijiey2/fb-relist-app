@@ -1,4 +1,3 @@
-```java
 package com.fbrelist.app;
 
 import android.annotation.SuppressLint;
@@ -149,6 +148,3 @@ public class MainActivity extends Activity {
         }
     }
 }
-```
-
-Paste replace semua dalam `MainActivity.java`, commit, tunggu build, install APK baru. Bagitau! 🙂
